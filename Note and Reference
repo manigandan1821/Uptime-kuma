@@ -1,0 +1,421 @@
+Uptime-Kuma
+---------------------------------------------------
+Create namespace  ------------namespace.yaml
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat namespace.yaml
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: mani
+------------------------------------------------------
+Apply namespace 
+
+kubectl apply -f namespace.yaml
+-----------------------------------------------
+Check the namespace
+
+kubectl get namespace
+
+--------------------------------------------------
+
+-------------------------------------------------
+To check the service
+
+kubectl get svc
+
+kubectl get svc -n=mani
+
+----------------------------------------------------
+
+Then we create a Service for Uptime-Kuma which will listen on port 3001. The selector will be app: uptime-kuma.
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: uptime-kuma-service
+  namespace: mani
+spec:
+  selector:
+    app: uptime-kuma
+  type:  LoadBalancer
+  ports:
+  - name: uptime-kuma
+    port: 3001
+----------------------------------------------------
+
+Apply the service
+
+kubectl apply -f service.yaml -n=mani
+
+-----------------------------------------------
+
+To check the service 
+
+kubectl get svc -n=mani
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# kubectl get svc -n=mani
+NAME                  TYPE           CLUSTER-IP      EXTERNAL-IP                                                                PORT(S)          AGE
+uptime-kuma-service   LoadBalancer   172.20.128.51   a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com   3001:31896/TCP   101m
+
+------------------------------------------------
+
+
+Deployment yaml file
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat deployment.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: uptime-kuma
+  namespace: mani
+spec:
+  replicas: 1
+  serviceName: uptime-kuma-service
+  selector:
+    matchLabels:
+      app: uptime-kuma
+  template:
+    metadata:
+      labels:
+        app: uptime-kuma
+    spec:
+      containers:
+        - name: uptime-kuma
+          image: louislam/uptime-kuma:1.11.4
+          env:
+            - name: UPTIME_KUMA_PORT
+              value: "3001"
+            - name: PORT
+              value: "3001"
+          ports:
+            - name: uptime-kuma
+              containerPort: 3001
+              protocol: TCP
+          volumeMounts:
+            - name: kuma-data
+              mountPath: /app/data
+
+  volumeClaimTemplates:
+    - metadata:
+        name: kuma-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 1Gi
+root@ip-10-0-1-168:~/uptime_kuma_mani#
+
+----------------------------------------------------------
+
+Apply the pods
+
+kubectl apply -f deployment.yaml -n=mani
+
+------------------------------------------------------------
+
+
+To check the pods with namespace
+
+kubectl get pod -n=mani
+
+-----------------------------------------------------
+
+New deploy.yaml ----- after adding the resources 
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat deployment.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: uptime-kuma
+  namespace: mani
+spec:
+  replicas: 1
+  serviceName: uptime-kuma-service
+  selector:
+    matchLabels:
+      app: uptime-kuma
+  template:
+    metadata:
+      labels:
+        app: uptime-kuma
+    spec:
+      containers:
+        - name: uptime-kuma
+          image: louislam/uptime-kuma:1.11.4
+          env:
+            - name: UPTIME_KUMA_PORT
+              value: "3001"
+            - name: PORT
+              value: "3001"
+          ports:
+            - name: uptime-kuma
+              containerPort: 3001
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "100m"
+            requests:
+              cpu: "100m"
+          volumeMounts:
+            - name: kuma-data
+              mountPath: /app/data
+
+  volumeClaimTemplates:
+    - metadata:
+        name: kuma-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 1Gi
+
+
+----------------------------------------------------------
+
+
+Check the pods
+
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# kubectl get pods -n=mani
+NAME            READY   STATUS    RESTARTS   AGE
+uptime-kuma-0   1/1     Running   0          100m
+root@ip-10-0-1-168:~/uptime_kuma_mani#
+
+-----------------------------------------------------------------
+
+Create ingress file
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: uptime-ingress
+  namespace: mani
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: instance
+spec:
+  rules:
+  - host: a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: uptime-kuma-service
+            port:
+              number: 3001
+
+-------------------------------
+
+New ingress file
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat ingress1.yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-uptima-kuma
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:805392809179:certificate/1e23fa2a-22ab-41be-828c-63836415abbb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP": 80}]'
+    alb.ingress.kubernetes.io/subnets: subnet-07e96ff34c62a1dbb, subnet-09a4468ae907d12c8, subnet-00f8c18d3230944ac
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: uptime-kuma-service
+              port:
+                number: 3001
+-------------------------------------------------------
+
+Check the ingress
+
+root@ip-10-0-1-168:~# kubectl get ing -n=mani
+NAME                  CLASS    HOSTS                                                                      ADDRESS                                                                          PORTS     AGE
+ingress-uptima-kuma   alb      *                                                                          k8s-mani-ingressu-ca44655d88-2047475012.ap-south-1.elb.amazonaws.com             80        25h
+kuma                  <none>   uptime-kuma.mydomain.de                                                    a59038ac7880d4d96ae3d3b501037002-6f72a2e7d2a99b0c.elb.ap-south-1.amazonaws.com   80, 443   2d4h
+uptime-ingress        <none>   a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com   k8s-mani-uptimein-9b7e480531-485001103.ap-south-1.elb.amazonaws.com              80        2d4h
+root@ip-10-0-1-168:~#
+
+-------------------------------------------------------------
+
+
+To check the volume 
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# kubectl exec -n mani uptime-kuma-0 -it -- /bin/sh
+# df -h
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G  6.4G  194G   4% /
+tmpfs            64M     0   64M   0% /dev
+tmpfs           7.8G     0  7.8G   0% /sys/fs/cgroup
+/dev/nvme2n1    974M  1.1M  957M   1% /app/data
+/dev/nvme0n1p1  200G  6.4G  194G   4% /etc/hosts
+shm              64M     0   64M   0% /dev/shm
+tmpfs            15G   12K   15G   1% /run/secrets/kubernetes.io/serviceaccount
+tmpfs           7.8G     0  7.8G   0% /proc/acpi
+tmpfs           7.8G     0  7.8G   0% /sys/firmware
+#
+#
+#
+#
+
+---------------------------------------------------------
+
+
+To check the metric server
+
+kubectl -n kube-system get pods
+
+-----------------------------------------------------------
+
+Deploy horizontal pod autoscaler either yaml file or command
+
+hpa.yaml
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# cat hpa.yaml
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: uptime-kuma
+spec:
+  maxReplicas: 3
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: statefulset
+    name: uptime-kuma
+  targetCPUUtilizationPercentage: 80
+
+
+------------------------------------------------------------------------
+
+Create HPA using Command
+
+kubectl autoscale deploy uptime-kuma --min 1 --max 3 --cpu-percent 80
+
+---------------------------------------------------------------------------------------
+
+Every 2.0s: kubectl get all -n=mani                                                                                                  ip-10-0-1-168: Mon Nov  7 12:01:49 2022
+
+NAME                READY   STATUS    RESTARTS   AGE
+pod/uptime-kuma-0   1/1     Running   0          4h19m
+
+NAME                          TYPE           CLUSTER-IP      EXTERNAL-IP                                                                PORT(S)          AGE
+service/uptime-kuma-service   LoadBalancer   172.20.128.51   a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com   3001:31896/TCP   4h21m
+
+NAME                           READY   AGE
+statefulset.apps/uptime-kuma   1/1     4h19m
+
+NAME                                                  REFERENCE                    TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/uptime-kuma-hpa   Deployment/uptime-kuma-hpa   <unknown>/80%   1         3         0          64s
+
+
+
+-----------------------------
+
+
+
+To check the HPA
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# kubectl get hpa -n=mani
+NAME          REFERENCE                 TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
+uptime-kuma   statefulset/uptime-kuma   5%/80%    1         3         1          88s
+root@ip-10-0-1-168:~/uptime_kuma_mani#
+
+----------------------------------
+We need to add the resource limit in deploy.yaml file
+------------------------------------
+
+root@ip-10-0-1-168:~/uptime_kuma_mani# kubectl describe hpa uptime-kuma -n=mani
+Name:                                                  uptime-kuma
+Namespace:                                             mani
+Labels:                                                <none>
+Annotations:                                           <none>
+CreationTimestamp:                                     Mon, 07 Nov 2022 12:23:40 +0000
+Reference:                                             statefulset/uptime-kuma
+Metrics:                                               ( current / target )
+  resource cpu on pods  (as a percentage of request):  5% (5m) / 80%
+Min replicas:                                          1
+Max replicas:                                          3
+statefulset pods:                                      1 current / 1 desired
+Conditions:
+  Type            Status  Reason              Message
+  ----            ------  ------              -------
+  AbleToScale     True    ReadyForNewScale    recommended size matches current size
+  ScalingActive   True    ValidMetricFound    the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)
+  ScalingLimited  False   DesiredWithinRange  the desired count is within the acceptable range
+Events:           <none>
+root@ip-10-0-1-168:~/uptime_kuma_mani#
+
+-----------------------------------------------------------------
+
+Install siege to check the http load testing
+
+apt install siege
+
+siege -q -c 5 -t 2m http://a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com:3001
+
+siege -q -c 5 -t 2m https://uptime-kuma.minfydevops.tk/dashboard
+
+-----
+kubectl exec -n mani uptime-kuma-0 -it -- /bin/sh
+---------------------------------------------------------------------
+
+Every 2.0s: kubectl get all -n=mani                                                                                                  ip-10-0-1-168: Mon Nov  7 12:34:54 2022
+
+NAME                READY   STATUS    RESTARTS   AGE
+pod/uptime-kuma-0   1/1     Running   0          19m
+pod/uptime-kuma-1   1/1     Running   0          103s
+pod/uptime-kuma-2   1/1     Running   0          27s
+
+NAME                          TYPE           CLUSTER-IP      EXTERNAL-IP                                                                PORT(S)          AGE
+service/uptime-kuma-service   LoadBalancer   172.20.128.51   a3412fd521bcd43bab2e6863bc80af4d-1716772245.ap-south-1.elb.amazonaws.com   3001:31896/TCP   4h54m
+
+NAME                           READY   AGE
+statefulset.apps/uptime-kuma   3/3     4h52m
+
+NAME                                              REFERENCE                 TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/uptime-kuma   statefulset/uptime-kuma   83%/80%   1         3         3          11m
+
+
+
+------------------------------------------------------------------------
+
+Domain name: https://uptime-kuma.minfydevops.tk/
+
+https://docs.aws.amazon.com/xray/latest/devguide/scorekeep-tutorial.html#xray-gettingstarted-sample
+----------------------------------------------------------------------------
+
+Enable HPA video link
+
+https://www.youtube.com/watch?v=uxuyPru3_Lc
+-------------------------------------------------------------------------------
+
+
+Telegram notification in uptime kuma
+
+https://www.youtube.com/watch?v=ffPp2RQjgfw
+
+-----------------------------------------------------------------------------
+
+Uptime-kuma
+
+https://cloudraya.com/knowledge-base/monitor-your-services-uptime-using-uptime-kuma/
+
+-----------------------------------------------------------------------------
